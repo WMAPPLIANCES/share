@@ -1,0 +1,238 @@
+version: "3.7"
+services:
+
+  chatwoot_db_init:
+    image: chatwoot/chatwoot:latest
+    command: bundle exec rails db:chatwoot_prepare
+    
+    volumes:
+      - chatwoot_storage:/app/storage
+      - chatwoot_public:/app/public
+      - chatwoot_mailer:/app/app/views/devise/mailer
+      - chatwoot_mailers:/app/app/views/mailers
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    
+    networks:
+      - agent_network
+    
+    environment:
+      - INSTALLATION_NAME=your_company_name
+      - SECRET_KEY_BASE=your_secret_key_base_here
+      - FRONTEND_URL=https://your-chatwoot-domain.com
+      - FORCE_SSL=true
+      - DEFAULT_LOCALE=en_US
+      - TZ=America/New_York
+      - REDIS_URL=redis://redis:6379
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+      - POSTGRES_USERNAME=supabase_admin
+      - POSTGRES_PASSWORD=your_supabase_password
+      - POSTGRES_DATABASE=postgres
+      - RAILS_ENV=production
+      - ACTIVE_STORAGE_SERVICE=local
+      - MAILER_SENDER_EMAIL=your_email@domain.com
+      - SMTP_DOMAIN=your-domain.com
+      - SMTP_ADDRESS=smtp.gmail.com
+      - SMTP_PORT=587
+      - SMTP_SSL=false
+      - SMTP_USERNAME=your_smtp_username
+      - SMTP_PASSWORD=your_smtp_password
+      - SMTP_AUTHENTICATION=login
+      - SMTP_ENABLE_STARTTLS_AUTO=true
+      - SMTP_OPENSSL_VERIFY_MODE=peer
+      - MAILER_INBOUND_EMAIL_DOMAIN=your_email@domain.com
+      - SIDEKIQ_CONCURRENCY=10
+      - RACK_TIMEOUT_SERVICE_TIMEOUT=0
+      - RAILS_MAX_THREADS=5
+      - WEB_CONCURRENCY=2
+      - ENABLE_RACK_ATTACK=false
+      - NODE_ENV=production
+      - INSTALLATION_ENV=docker
+      - RAILS_LOG_TO_STDOUT=true
+      - USE_INBOX_AVATAR_FOR_BOT=true
+      - ENABLE_ACCOUNT_SIGNUP=false
+
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+
+  chatwoot_app:
+    image: chatwoot/chatwoot:latest
+    command: bundle exec rails s -p 3000 -b 0.0.0.0
+    entrypoint: docker/entrypoints/rails.sh
+    depends_on:
+      - chatwoot_db_init
+
+    volumes:
+      - chatwoot_storage:/app/storage
+      - chatwoot_public:/app/public
+      - chatwoot_mailer:/app/app/views/devise/mailer
+      - chatwoot_mailers:/app/app/views/mailers
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    networks:
+      - agent_network
+    
+    environment:
+      - INSTALLATION_NAME=your_company_name
+      - SECRET_KEY_BASE=your_secret_key_base_here
+      - FRONTEND_URL=https://your-chatwoot-domain.com
+      - FORCE_SSL=true
+      - DEFAULT_LOCALE=en_US
+      - TZ=America/New_York
+      - REDIS_URL=redis://redis:6379
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+      - POSTGRES_USERNAME=supabase_admin
+      - POSTGRES_PASSWORD=your_supabase_password
+      - POSTGRES_DATABASE=postgres
+      - RAILS_ENV=production
+      - ACTIVE_STORAGE_SERVICE=local
+      - MAILER_SENDER_EMAIL=your_email@domain.com
+      - SMTP_DOMAIN=your-domain.com
+      - SMTP_ADDRESS=smtp.gmail.com
+      - SMTP_PORT=587
+      - SMTP_SSL=false
+      - SMTP_USERNAME=your_smtp_username
+      - SMTP_PASSWORD=your_smtp_password
+      - SMTP_AUTHENTICATION=login
+      - SMTP_ENABLE_STARTTLS_AUTO=true
+      - SMTP_OPENSSL_VERIFY_MODE=peer
+      - MAILER_INBOUND_EMAIL_DOMAIN=your_email@domain.com
+      - SIDEKIQ_CONCURRENCY=10
+      - RACK_TIMEOUT_SERVICE_TIMEOUT=0
+      - RAILS_MAX_THREADS=5
+      - WEB_CONCURRENCY=2
+      - ENABLE_RACK_ATTACK=false
+      - NODE_ENV=production
+      - INSTALLATION_ENV=docker
+      - RAILS_LOG_TO_STDOUT=true
+      - USE_INBOX_AVATAR_FOR_BOT=true
+      - ENABLE_ACCOUNT_SIGNUP=false
+
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1024M
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.chatwoot_app.rule=Host(`your-chatwoot-domain.com`)
+        - traefik.http.routers.chatwoot_app.entrypoints=websecure
+        - traefik.http.routers.chatwoot_app.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.chatwoot_app.priority=1
+        - traefik.http.routers.chatwoot_app.service=chatwoot_app
+        - traefik.http.services.chatwoot_app.loadbalancer.server.port=3000 
+        - traefik.http.services.chatwoot_app.loadbalancer.passhostheader=true 
+        - traefik.http.middlewares.sslheader.headers.customrequestheaders.X-Forwarded-Proto=https
+        - traefik.http.routers.chatwoot_app.middlewares=sslheader@docker
+
+  chatwoot_sidekiq:
+    image: chatwoot/chatwoot:latest
+    command: bundle exec sidekiq -C config/sidekiq.yml
+    depends_on:
+      - chatwoot_db_init
+
+    volumes:
+      - chatwoot_storage:/app/storage
+      - chatwoot_public:/app/public
+      - chatwoot_mailer:/app/app/views/devise/mailer
+      - chatwoot_mailers:/app/app/views/mailers
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    networks:
+      - agent_network
+
+    environment:
+      - INSTALLATION_NAME=your_company_name
+      - SECRET_KEY_BASE=your_secret_key_base_here
+      - FRONTEND_URL=https://your-chatwoot-domain.com
+      - FORCE_SSL=true
+      - DEFAULT_LOCALE=en_US
+      - TZ=America/New_York
+      - REDIS_URL=redis://redis:6379
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+      - POSTGRES_USERNAME=supabase_admin
+      - POSTGRES_PASSWORD=your_supabase_password
+      - POSTGRES_DATABASE=postgres
+      - RAILS_ENV=production
+      - ACTIVE_STORAGE_SERVICE=local
+      - MAILER_SENDER_EMAIL=your_email@domain.com
+      - SMTP_DOMAIN=your-domain.com
+      - SMTP_ADDRESS=smtp.gmail.com
+      - SMTP_PORT=587
+      - SMTP_SSL=false
+      - SMTP_USERNAME=your_smtp_username
+      - SMTP_PASSWORD=your_smtp_password
+      - SMTP_AUTHENTICATION=login
+      - SMTP_ENABLE_STARTTLS_AUTO=true
+      - SMTP_OPENSSL_VERIFY_MODE=peer
+      - MAILER_INBOUND_EMAIL_DOMAIN=your_email@domain.com
+      - SIDEKIQ_CONCURRENCY=10
+      - RACK_TIMEOUT_SERVICE_TIMEOUT=0
+      - RAILS_MAX_THREADS=5
+      - WEB_CONCURRENCY=2
+      - ENABLE_RACK_ATTACK=false
+      - NODE_ENV=production
+      - INSTALLATION_ENV=docker
+      - RAILS_LOG_TO_STDOUT=true
+      - USE_INBOX_AVATAR_FOR_BOT=true
+      - ENABLE_ACCOUNT_SIGNUP=false
+
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1024M
+
+volumes:
+  chatwoot_storage:
+    external: true
+    name: chatwoot_storage
+  chatwoot_public:
+    external: true
+    name: chatwoot_public
+  chatwoot_mailer:
+    external: true
+    name: chatwoot_mailer
+  chatwoot_mailers:
+    external: true
+    name: chatwoot_mailers
+
+networks:
+  agent_network:
+    external: true
+    name: agent_network
